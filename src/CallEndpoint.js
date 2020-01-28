@@ -1,11 +1,26 @@
 const AWS = require('aws-sdk');
 
-const lambda = new AWS.Lambda();
+const sts = new AWS.STS();
 
 exports.handler = async (event, context) => {
   const attempt = event.result ? event.result.attempt + 1 : 0;
   try {
     console.log('Received event:', JSON.stringify(event, null, 2));
+
+    const assumeRoleResponse = await sts.assumeRole({
+      RoleArn: event.ResourceProperties.RoleArn,
+      RoleSessionName: event.RequestId,
+      ExternalId: `${event.RequestId}${new Date().valueOf()}`,
+      DurationSeconds: 3600,
+    }).promise();
+
+    const accessParams = {
+      accessKeyId: assumeRoleResponse.Credentials.AccessKeyId,
+      secretAccessKey: assumeRoleResponse.Credentials.SecretAccessKey,
+      sessionToken: assumeRoleResponse.Credentials.SessionToken,
+    };
+
+    const lambda = new AWS.Lambda(accessParams);
 
     const rawEvent = {
       ...event

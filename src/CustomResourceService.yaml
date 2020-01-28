@@ -1,6 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: CloudFormation Custom Resource as a Service
 Resources:
+  # Queue for failed messages
+  # TODO: we should add a subscription to this to the response lambda and make sure that lambda can handle this payload so it can report an error
   CloudFormationCustomResourceServiceDeliveryFailureQueue:
     Type: AWS::SQS::Queue
 
@@ -22,6 +24,7 @@ Resources:
   #     Threshold: 0
   #     TreatMissingData: notBreaching
 
+  # Permission for SNS to send dead letters to the failure queue
   CustomResourceDeliveryFailureQueuePolicy:
     Type: AWS::SQS::QueuePolicy
     Properties:
@@ -30,7 +33,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: sqs.amazonaws.com
+              Service: sns.amazonaws.com
             Action: sqs:SendMessage
             Resource: !Ref CloudFormationCustomResourceServiceDeliveryFailureQueue
             Condition:
@@ -72,6 +75,7 @@ Resources:
         - !Ref CloudFormationCustomResourceServiceStartPolicy
         - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
 
+  # This function starts the state machine
   CloudFormationCustomResourceServiceStartFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -124,6 +128,7 @@ Resources:
             }
           }
 
+  # This permission allows SNS to invoke the lambda
   CloudFormationCustomResourceServiceStartFunctionPermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -132,6 +137,7 @@ Resources:
       Action: lambda:InvokeFunction
       SourceArn: !Ref CloudFormationCustomResourceServiceSnsTopic
 
+  # This subscription will trigger the start lambda when messages are published to the SNS topic
   CloudFormationCustomResourceServiceStartFunctionSubscription:
     Type: AWS::SNS::Subscription
     Properties:
@@ -141,6 +147,8 @@ Resources:
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt CloudFormationCustomResourceServiceDeliveryFailureQueue.Arn
 
+  # This policy grants the call endpoint function permission to call the lambda
+  # TODO: need to make a change that drives this permission differently if this is going to run globally
   CloudFormationCustomResourceServiceCallEndpointPolicy:
     Type: 'AWS::IAM::ManagedPolicy'
     Properties:
@@ -154,6 +162,11 @@ Resources:
             Effect: Allow
             Resource:
               - arn:aws:lambda:us-west-2:875285909177:function:test
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Resource:
+              - !Sub 'arn:aws:iam::*:role/CustomResourceService-*'
 
   CloudFormationCustomResourceServiceCallEndpointRole:
     Type: 'AWS::IAM::Role'
@@ -170,6 +183,7 @@ Resources:
         - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
         - !Ref CloudFormationCustomResourceServiceCallEndpointPolicy
 
+  # This function calls the endpoint lambda
   CloudFormationCustomResourceServiceCallEndpointFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -180,12 +194,27 @@ Resources:
         ZipFile: |-
           const AWS = require('aws-sdk');
 
-          const lambda = new AWS.Lambda();
+          const sts = new AWS.STS();
 
           exports.handler = async (event, context) => {
             const attempt = event.result ? event.result.attempt + 1 : 0;
             try {
               console.log('Received event:', JSON.stringify(event, null, 2));
+
+              const assumeRoleResponse = await sts.assumeRole({
+                RoleArn: event.ResourceProperties.RoleArn,
+                RoleSessionName: event.RequestId,
+                ExternalId: `${event.RequestId}${new Date().valueOf()}`,
+                DurationSeconds: 3600,
+              }).promise();
+
+              const accessParams = {
+                accessKeyId: assumeRoleResponse.Credentials.AccessKeyId,
+                secretAccessKey: assumeRoleResponse.Credentials.SecretAccessKey,
+                sessionToken: assumeRoleResponse.Credentials.SessionToken,
+              };
+
+              const lambda = new AWS.Lambda(accessParams);
 
               const rawEvent = {
                 ...event
@@ -286,6 +315,7 @@ Resources:
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
 
+  # This function reports the response back to CloudFormation by putting a response file in S# using the signed URL
   CloudFormationCustomResourceServiceResponseFunction:
     Type: AWS::Lambda::Function
     Properties:
