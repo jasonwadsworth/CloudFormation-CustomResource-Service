@@ -12,23 +12,14 @@ phases:
       -
   pre_build:
     commands:
-      - deploy_file_name=Pipeline-NoBuild.zip
+      - deploy_file_name=CloudFormation-CustomResourceService-NoBuild.zip
   build:
     commands:
-      # read in the state machine JSON
-      - state_machine=$(<CustomResourceStateMachine.json)
-      # remove the new lines
-      - state_machine_single_line=${state_machine//[$'\t\r\n']}
-      # read in the deploy yaml
-      - deploy=$(<CustomResourceService.yaml)
-      # replace the state machine JSON
-      - (echo "${deploy/<STATE_MACHINE>/$state_machine_single_line}") > CustomResourceService.yaml
-
       # the only times we want to deploy are when the build is triggered manually (both CODEBUILD_WEBHOOK_HEAD_REF and CODEBUILD_WEBHOOK_EVENT will be empty) or the build is triggered for master and the event is not a pull request event
       - |
         if [ "$CODEBUILD_WEBHOOK_HEAD_REF" = "refs/heads/master" ] || [ "$CODEBUILD_WEBHOOK_HEAD_REF" = "" ] ; then
           if [ "$CODEBUILD_WEBHOOK_EVENT" != "PULL_REQUEST_CREATED" ] && [ "$CODEBUILD_WEBHOOK_EVENT" != "PULL_REQUEST_UPDATED" ] && [ "$CODEBUILD_WEBHOOK_EVENT" != "PULL_REQUEST_REOPENED" ] ; then
-            deploy_file_name=Pipeline.zip
+            deploy_file_name=CloudFormation-CustomResourceService.zip
           fi
         fi
 
@@ -36,21 +27,26 @@ phases:
 
   post_build:
     commands:
-      - if ["$CODEBUILD_BUILD_SUCCEEDING" = "0" ] ; then deploy_file_name=Pipeline-$CODEBUILD_RESOLVED_SOURCE_VERSION.zip ; fi
+      - if ["$CODEBUILD_BUILD_SUCCEEDING" = "0" ] ; then deploy_file_name=CloudFormation-CustomResourceService-$CODEBUILD_RESOLVED_SOURCE_VERSION.zip ; fi
 artifacts:
   files:
     - Pipeline.yaml
-    - CustomResourceService.yaml
-    - location
+    - src/CustomResourceService.yaml
   name: $deploy_file_name
+  discard-paths: yes
 
   secondary-artifacts:
     StartFunction:
       files:
-        - Start.js
+        - src/Start.js
+      discard-paths: yes
+
     CallEndpointFunction:
       files:
-        - CallEndpoint.js
+        - src/CallEndpoint.js
+      discard-paths: yes
+
     ResponseFunction:
       files:
-        - Response.js
+        - src/Response.js
+      discard-paths: yes

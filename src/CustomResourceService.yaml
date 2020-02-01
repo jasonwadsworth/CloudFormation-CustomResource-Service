@@ -308,7 +308,91 @@ Resources:
       StateMachineName: CloudFormation-CustomResourceService-StateMachine
       RoleArn: !GetAtt CloudFormationCustomResourceServiceStateMachineRole.Arn
       DefinitionString: !Sub |-
-        <STATE_MACHINE>
+        {
+            "Comment": "A Catch example of the Amazon States Language using an AWS Lambda Function",
+            "StartAt": "CallEndpoint",
+            "States": {
+                "CallEndpoint": {
+                    "Type": "Task",
+                    "Resource": "${CloudFormationCustomResourceServiceCallEndpointFunction.Arn}",
+                    "ResultPath": "$.result",
+                    "Retry": [
+                        {
+                            "ErrorEquals": [
+                                "RetryError"
+                            ],
+                            "IntervalSeconds": 5,
+                            "MaxAttempts": 5,
+                            "BackoffRate": 2.0
+                        }
+                    ],
+                    "Catch": [
+                        {
+                            "ErrorEquals": [
+                                "States.ALL"
+                            ],
+                            "ResultPath": "$.error",
+                            "Next": "Response"
+                        }
+                    ],
+                    "Next": "CompleteCheck"
+                },
+                "CompleteCheck": {
+                    "Type": "Choice",
+                    "Choices": [
+                        {
+                            "Variable": "$.result.isCompleteOrFailed",
+                            "BooleanEquals": true,
+                            "Next": "Response"
+                        }
+                    ],
+                    "Default": "DelayAndRetry"
+                },
+                "DelayAndRetry": {
+                    "Type": "Wait",
+                    "Seconds": 15,
+                    "Next": "CallEndpoint"
+                },
+                "Response": {
+                    "Type": "Task",
+                    "Resource": "${CloudFormationCustomResourceServiceResponseFunction.Arn}",
+                    "Retry": [
+                        {
+                            "ErrorEquals": [
+                                "RetryError"
+                            ],
+                            "IntervalSeconds": 5,
+                            "MaxAttempts": 10,
+                            "BackoffRate": 2.0
+                        }
+                    ],
+                    "Catch": [
+                        {
+                            "ErrorEquals": [
+                                "States.ALL"
+                            ],
+                            "ResultPath": "$.error",
+                            "Next": "PublishErrorSns"
+                        }
+                    ],
+                    "End": true
+                },
+                "PublishErrorSns": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::sns:publish",
+                    "Parameters": {
+                        "TopicArn": "${CloudFormationCustomResourceServiceResponseFailedSnsTopic}",
+                        "Message.$": "$"
+                    },
+                    "Next": "NotifyFailure"
+                },
+                "NotifyFailure": {
+                    "Type": "Fail",
+                    "Cause": "Unable to respond to CloudFormation",
+                    "Error": "ErrorA"
+                }
+            }
+        }
 Outputs:
   CloudFormationCustomResourceServiceSnsTopic:
     Description: CloudFormation Custom Resource Service Sns Topic
