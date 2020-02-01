@@ -2,13 +2,12 @@ version: 0.2
 
 env:
   variables:
-    key: "value"
-    key: "value"
+    key: 'value'
 
 phases:
   install:
     runtime-versions:
-      runtime: nodejs12
+      nodejs: 12
     commands:
       -
   pre_build:

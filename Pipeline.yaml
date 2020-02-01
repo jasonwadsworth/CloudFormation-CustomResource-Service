@@ -218,7 +218,7 @@ Resources:
   Pipeline:
     Type: 'AWS::CodePipeline::Pipeline'
     Properties:
-      Name: User
+      Name: CloudFormation-CustomResource-Service
       RestartExecutionOnUpdate: true
       RoleArn: !GetAtt CodePipelineRole.Arn
       ArtifactStores:
@@ -240,13 +240,13 @@ Resources:
                 Version: '1'
               Configuration:
                 S3Bucket: !ImportValue BuildBucket
-                S3ObjectKey: User/User.zip
+                S3ObjectKey: CloudFormation-CustomResourceService/CloudFormation-CustomResourceService.zip
                 PollForSourceChanges: 'true'
               OutputArtifacts:
                 - Name: PrimaryOutput
               RoleArn: !GetAtt PipelineSourceRole.Arn
               RunOrder: 1
-            - Name: ApiSource
+            - Name: StartSource
               ActionTypeId:
                 Category: Source
                 Owner: AWS
@@ -254,10 +254,38 @@ Resources:
                 Version: '1'
               Configuration:
                 S3Bucket: !ImportValue BuildBucket
-                S3ObjectKey: User/Api/User.Api.zip
+                S3ObjectKey: CloudFormation-CustomResourceService/Start/CloudFormation-CustomResourceService.Start.zip
                 PollForSourceChanges: 'false'
               OutputArtifacts:
-                - Name: ApiOutput
+                - Name: StartOutput
+              RoleArn: !GetAtt PipelineSourceRole.Arn
+              RunOrder: 1
+            - Name: CallEndpointSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: S3
+                Version: '1'
+              Configuration:
+                S3Bucket: !ImportValue BuildBucket
+                S3ObjectKey: CloudFormation-CustomResourceService/CallEndpoint/CloudFormation-CustomResourceService.CallEndpoint.zip
+                PollForSourceChanges: 'false'
+              OutputArtifacts:
+                - Name: CallEndpointOutput
+              RoleArn: !GetAtt PipelineSourceRole.Arn
+              RunOrder: 1
+            - Name: ResponseSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: S3
+                Version: '1'
+              Configuration:
+                S3Bucket: !ImportValue BuildBucket
+                S3ObjectKey: CloudFormation-CustomResourceService/Response/CloudFormation-CustomResourceService.Response.zip
+                PollForSourceChanges: 'false'
+              OutputArtifacts:
+                - Name: ResponseOutput
               RoleArn: !GetAtt PipelineSourceRole.Arn
               RunOrder: 1
         - Name: PreDeploy
@@ -271,7 +299,7 @@ Resources:
               Configuration:
                 ChangeSetName: DeployChangeSet
                 ActionMode: CHANGE_SET_REPLACE
-                StackName: User-Pipeline
+                StackName: CloudFormation-CustomResourceService-Pipeline
                 Capabilities: CAPABILITY_NAMED_IAM
                 TemplatePath: 'PrimaryOutput::Pipeline.yaml'
                 ParameterOverrides: !Sub '{ "GitHubUrl": "${GitHubUrl}" }'
@@ -290,7 +318,7 @@ Resources:
               Configuration:
                 ChangeSetName: DeployChangeSet
                 ActionMode: CHANGE_SET_EXECUTE
-                StackName: User-Pipeline
+                StackName: CloudFormation-CustomResourceService-Pipeline
                 Capabilities: CAPABILITY_NAMED_IAM
                 RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCloudFormation'
               Region: !Ref AWS::Region
@@ -314,6 +342,9 @@ Resources:
                 RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCloudFormation'
               InputArtifacts:
                 - Name: PrimaryOutput
+                - Name: StartOutput
+                - Name: CallEndpointOutput
+                - Name: ResponseOutput
               Region: !Ref AWS::Region
               RunOrder: 1
               RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCodePipeline'
