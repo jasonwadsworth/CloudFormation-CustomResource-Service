@@ -1,0 +1,334 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Continuous integration project for CloudFormation Custom Resource Service
+Parameters:
+  GitHubUrl:
+    Description: The HTTPS URL for GitHub for the project
+    Type: String
+Resources:
+  CodeBuildRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: CloudFormation-CustomResourceService-CodeBuild
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+      ManagedPolicyArns:
+        - !Ref CodeBuildPolicy
+  CodeBuildPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: CloudFormation-CustomResourceService-CodeBuild
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Resource:
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/CloudFormation-CustomResourceService*'
+            Effect: Allow
+          - Action:
+              - 's3:PutObject'
+              - 's3:GetObject'
+              - 's3:GetObjectVersion'
+            Resource:
+              - 'Fn::Sub':
+                  - 'arn:aws:s3:::${Bucket}'
+                  - Bucket: !ImportValue BuildBucket
+              - 'Fn::Sub':
+                  - 'arn:aws:s3:::${Bucket}/*'
+                  - Bucket: !ImportValue BuildBucket
+            Effect: Allow
+  CodeBuildProject:
+    Type: 'AWS::CodeBuild::Project'
+    Properties:
+      Description: Continuous integration build for CloudFormation Custom Resource Service
+      Name: CloudFormation-CustomResourceService
+      Artifacts:
+        Type: S3
+        Packaging: ZIP
+        Location: !ImportValue BuildBucket
+        Name: CloudFormation-CustomResourceService.zip
+        OverrideArtifactName: true
+        Path: CloudFormation-CustomResourceService
+      SecondaryArtifacts:
+        - ArtifactIdentifier: StartFunction
+          Type: S3
+          Packaging: ZIP
+          Location: !ImportValue BuildBucket
+          Name: CloudFormation-CustomResourceService.Start.zip
+          OverrideArtifactName: true
+          Path: CloudFormation-CustomResourceService/Start
+        - ArtifactIdentifier: CallEndpointFunction
+          Type: S3
+          Packaging: ZIP
+          Location: !ImportValue BuildBucket
+          Name: CloudFormation-CustomResourceService.CallEndpoint.zip
+          OverrideArtifactName: true
+          Path: CloudFormation-CustomResourceService/CallEndpoint
+        - ArtifactIdentifier: ResponseFunction
+          Type: S3
+          Packaging: ZIP
+          Location: !ImportValue BuildBucket
+          Name: CloudFormation-CustomResourceService.Response.zip
+          OverrideArtifactName: true
+          Path: CloudFormation-CustomResourceService/Response
+      ServiceRole: !Ref CodeBuildRole
+      Environment:
+        Type: LINUX_CONTAINER
+        Image: 'aws/codebuild/standard:3.0'
+        PrivilegedMode: true
+        ComputeType: BUILD_GENERAL1_SMALL
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: 'PULL_REQUEST_CREATED,PULL_REQUEST_UPDATED,PULL_REQUEST_REOPENED'
+            - Type: BASE_REF
+              Pattern: ^refs/heads/master$
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/heads/master$
+      Source:
+        Auth:
+          Type: OAUTH
+        Type: GITHUB
+        BuildSpec: buildspec.yaml
+        Location: !Ref GitHubUrl
+        ReportBuildStatus: true
+  CodePipelineRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: CloudFormation-CustomResourceService-CodePipeline
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref 'AWS::AccountId'
+            Action: 'sts:AssumeRole'
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+      ManagedPolicyArns:
+        - !Ref CodePipelinePolicy
+  CodePipelinePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: CloudFormation-CustomResourceService-CodePipeline
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - 'codepipeline:*'
+              - 'iam:ListRoles'
+              - 'cloudformation:Describe*'
+              - 'cloudFormation:List*'
+              - 'codebuild:BatchGetBuilds'
+              - 'codebuild:StartBuild'
+              - 'cloudformation:CreateStack'
+              - 'cloudformation:DeleteStack'
+              - 'cloudformation:DescribeStacks'
+              - 'cloudformation:UpdateStack'
+              - 'cloudformation:CreateChangeSet'
+              - 'cloudformation:DeleteChangeSet'
+              - 'cloudformation:DescribeChangeSet'
+              - 'cloudformation:ExecuteChangeSet'
+              - 'cloudformation:SetStackPolicy'
+              - 'cloudformation:ValidateTemplate'
+              - 'iam:PassRole'
+              - 's3:ListAllMyBuckets'
+              - 's3:GetBucketLocation'
+            Resource: '*'
+            Effect: Allow
+          - Action:
+              - 'sns:Publish'
+            Effect: Allow
+            Resource: !Sub 'arn:aws:sns:${AWS::Region}:${AWS::AccountId}:PipelineManualIntervention'
+          - Action:
+              - 's3:List*'
+              - 's3:Get*'
+            Effect: Allow
+            Resource:
+              - 'Fn::Sub':
+                  - 'arn:aws:s3:::${Bucket}'
+                  - Bucket: !ImportValue BuildBucket
+              - 'Fn::Sub':
+                  - 'arn:aws:s3:::${Bucket}/*'
+                  - Bucket: !ImportValue BuildBucket
+          - Action:
+              - 's3:GetBucketPolicy'
+              - 's3:ListBucket'
+              - 's3:GetObject'
+              - 's3:PutObject'
+            Effect: Allow
+            Resource:
+              - 'Fn::Sub':
+                  - 'arn:aws:s3:::${Bucket}'
+                  - Bucket: !ImportValue PipelineBucket
+              - 'Fn::Sub':
+                  - 'arn:aws:s3:::${Bucket}/*'
+                  - Bucket: !ImportValue PipelineBucket
+          - Effect: Allow
+            Action: 'sts:AssumeRole'
+            Resource:
+              - !GetAtt PipelineSourceRole.Arn
+              - !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCodePipeline'
+  PipelineSourceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: CloudFormation-CustomResourceService-PipelineSource
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              AWS: !Ref 'AWS::AccountId'
+      ManagedPolicyArns:
+        - !Ref PipelineSourcePolicy
+  PipelineSourcePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: CloudFormation-CustomResourceService-PipelineSource
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 's3:*'
+            Resource:
+              - 'Fn::Sub':
+                  - 'arn:aws:s3:::${Bucket}'
+                  - Bucket: !ImportValue BuildBucket
+              - 'Fn::Sub':
+                  - 'arn:aws:s3:::${Bucket}/*'
+                  - Bucket: !ImportValue BuildBucket
+              - 'Fn::Sub':
+                  - 'arn:aws:s3:::${Bucket}'
+                  - Bucket: !ImportValue PipelineBucket
+              - 'Fn::Sub':
+                  - 'arn:aws:s3:::${Bucket}/*'
+                  - Bucket: !ImportValue PipelineBucket
+  Pipeline:
+    Type: 'AWS::CodePipeline::Pipeline'
+    Properties:
+      Name: User
+      RestartExecutionOnUpdate: true
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      ArtifactStores:
+        - ArtifactStore:
+            Location: !ImportValue PipelineBucket
+            Type: S3
+            EncryptionKey:
+              Id: !ImportValue CrossAccountCMK
+              Type: KMS
+          Region: !Ref 'AWS::Region'
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: PrimarySource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: S3
+                Version: '1'
+              Configuration:
+                S3Bucket: !ImportValue BuildBucket
+                S3ObjectKey: User/User.zip
+                PollForSourceChanges: 'true'
+              OutputArtifacts:
+                - Name: PrimaryOutput
+              RoleArn: !GetAtt PipelineSourceRole.Arn
+              RunOrder: 1
+            - Name: ApiSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: S3
+                Version: '1'
+              Configuration:
+                S3Bucket: !ImportValue BuildBucket
+                S3ObjectKey: User/Api/User.Api.zip
+                PollForSourceChanges: 'false'
+              OutputArtifacts:
+                - Name: ApiOutput
+              RoleArn: !GetAtt PipelineSourceRole.Arn
+              RunOrder: 1
+        - Name: PreDeploy
+          Actions:
+            - Name: CreateUpdatePipelineChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ChangeSetName: DeployChangeSet
+                ActionMode: CHANGE_SET_REPLACE
+                StackName: User-Pipeline
+                Capabilities: CAPABILITY_NAMED_IAM
+                TemplatePath: 'PrimaryOutput::Pipeline.yaml'
+                ParameterOverrides: !Sub '{ "GitHubUrl": "${GitHubUrl}" }'
+                RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCloudFormation'
+              InputArtifacts:
+                - Name: PrimaryOutput
+              Region: !Ref AWS::Region
+              RunOrder: 1
+              RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCodePipeline'
+            - Name: ExecuteUpdatePipelineChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ChangeSetName: DeployChangeSet
+                ActionMode: CHANGE_SET_EXECUTE
+                StackName: User-Pipeline
+                Capabilities: CAPABILITY_NAMED_IAM
+                RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCloudFormation'
+              Region: !Ref AWS::Region
+              RunOrder: 2
+              RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCodePipeline'
+        - Name: Deploy
+          Actions:
+            - Name: CreatePrimaryChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ChangeSetName: DeployChangeSet
+                ActionMode: CHANGE_SET_REPLACE
+                StackName: CloudFormation-CustomResourceService
+                Capabilities: CAPABILITY_NAMED_IAM
+                TemplatePath: 'PrimaryOutput::CustomResourceService.yaml'
+                ParameterOverrides: '{ "BucketName": { "Fn::GetArtifactAtt": [ "ApiOutput", "BucketName" ] }, "StartFunctionKey": { "Fn::GetArtifactAtt": [ "StartOutput", "ObjectKey" ] }, "CallEndpointFunctionKey": { "Fn::GetArtifactAtt": [ "CallEndpointOutput", "ObjectKey" ] }, "ResponseFunctionKey": { "Fn::GetArtifactAtt": [ "ResponseOutput", "ObjectKey" ] } }'
+                RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCloudFormation'
+              InputArtifacts:
+                - Name: PrimaryOutput
+              Region: !Ref AWS::Region
+              RunOrder: 1
+              RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCodePipeline'
+            - Name: ExecutePrimaryChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              Configuration:
+                ChangeSetName: DeployChangeSet
+                ActionMode: CHANGE_SET_EXECUTE
+                StackName: CloudFormation-CustomResourceService
+                Capabilities: CAPABILITY_NAMED_IAM
+                RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCloudFormation'
+              Region: !Ref AWS::Region
+              RunOrder: 2
+              RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCodePipeline'

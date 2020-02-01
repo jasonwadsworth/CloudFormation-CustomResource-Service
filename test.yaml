@@ -1,0 +1,17 @@
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+  Test:
+    Type: 'Custom::Test'
+    Version: '1.0'
+    Properties:
+      ServiceToken: arn:aws:sns:us-west-2:471161320350:CloudFormationCustomResourceServiceSnsTopic
+      RoleArn: arn:aws:iam::875285909177:role/CustomResourceService-test
+      FunctionArn: arn:aws:lambda:us-west-2:875285909177:function:test
+      CustomThing: my custom thing
+Outputs:
+  TestName:
+    Description: TestName
+    Value: !GetAtt Test.Name
+  TestRef:
+    Description: TestArn
+    Value: !Ref Test

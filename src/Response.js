@@ -1,7 +1,33 @@
 exports.handler = (event, context) => {
   console.log('Received event:', JSON.stringify(event, null, 2));
 
-  if (event.result && event.result.response) {
+  if (event.Records) {
+    for (let record of event.Records) {
+      if (record.eventSource && record.eventSource === "aws:sqs") {
+        const errorMessage = record.messageAttributes && record.messageAttributes.ErrorMessage ? record.messageAttributes.ErrorMessage.stringValue : "Failed to process message";
+        const body = JSON.parse(record.body);
+        if (body.Records) {
+          for (let subRecord of body.Records) {
+            if (subRecord.Sns && subRecord.Sns.Message) {
+              const message = JSON.parse(subRecord.Sns.Message);
+              sendResponse({
+                Status: "FAILED",
+                Reason: errorMessage
+              }, message);
+            }
+          }
+        }
+      }
+      else if (record.Sns && record.Sns.Message) {
+        const message = JSON.parse(record.Sns.Message);
+        sendResponse({
+          Status: "FAILED",
+          Reason: "Failed to process message"
+        }, message);
+      }
+    }
+  }
+  else if (event.result && event.result.response) {
     console.log("Create a response and send it to the presigned URL.");
     sendResponse(event.result.response, event);
   }
@@ -11,6 +37,7 @@ exports.handler = (event, context) => {
   }
 
   function sendResponse(response, event) {
+    console.log("EVENT: " + JSON.stringify(event));
     var responseBody = JSON.stringify({
       Status: response.Status,
       Reason: response.Reason,

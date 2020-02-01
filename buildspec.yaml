@@ -1,0 +1,57 @@
+version: 0.2
+
+env:
+  variables:
+    key: "value"
+    key: "value"
+
+phases:
+  install:
+    runtime-versions:
+      runtime: nodejs12
+    commands:
+      -
+  pre_build:
+    commands:
+      - deploy_file_name=Pipeline-NoBuild.zip
+  build:
+    commands:
+      # read in the state machine JSON
+      - state_machine=$(<CustomResourceStateMachine.json)
+      # remove the new lines
+      - state_machine_single_line=${state_machine//[$'\t\r\n']}
+      # read in the deploy yaml
+      - deploy=$(<CustomResourceService.yaml)
+      # replace the state machine JSON
+      - (echo "${deploy/<STATE_MACHINE>/$state_machine_single_line}") > CustomResourceService.yaml
+
+      # the only times we want to deploy are when the build is triggered manually (both CODEBUILD_WEBHOOK_HEAD_REF and CODEBUILD_WEBHOOK_EVENT will be empty) or the build is triggered for master and the event is not a pull request event
+      - |
+        if [ "$CODEBUILD_WEBHOOK_HEAD_REF" = "refs/heads/master" ] || [ "$CODEBUILD_WEBHOOK_HEAD_REF" = "" ] ; then
+          if [ "$CODEBUILD_WEBHOOK_EVENT" != "PULL_REQUEST_CREATED" ] && [ "$CODEBUILD_WEBHOOK_EVENT" != "PULL_REQUEST_UPDATED" ] && [ "$CODEBUILD_WEBHOOK_EVENT" != "PULL_REQUEST_REOPENED" ] ; then
+            deploy_file_name=Pipeline.zip
+          fi
+        fi
+
+      - echo $deploy_file_name
+
+  post_build:
+    commands:
+      - if ["$CODEBUILD_BUILD_SUCCEEDING" = "0" ] ; then deploy_file_name=Pipeline-$CODEBUILD_RESOLVED_SOURCE_VERSION.zip ; fi
+artifacts:
+  files:
+    - Pipeline.yaml
+    - CustomResourceService.yaml
+    - location
+  name: $deploy_file_name
+
+  secondary-artifacts:
+    StartFunction:
+      files:
+        - Start.js
+    CallEndpointFunction:
+      files:
+        - CallEndpoint.js
+    ResponseFunction:
+      files:
+        - Response.js
