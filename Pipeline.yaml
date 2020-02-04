@@ -215,6 +215,12 @@ Resources:
               - 'Fn::Sub':
                   - 'arn:aws:s3:::${Bucket}/*'
                   - Bucket: !ImportValue PipelineBucket
+          - Effect: Allow
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey
+            Resource:
+              - !ImportValue CrossAccountCMK
   Pipeline:
     Type: 'AWS::CodePipeline::Pipeline'
     Properties:
@@ -338,7 +344,7 @@ Resources:
                 StackName: CloudFormation-CustomResourceService
                 Capabilities: CAPABILITY_NAMED_IAM
                 TemplatePath: 'PrimaryOutput::CustomResourceService.yaml'
-                ParameterOverrides: '{ "BucketName": { "Fn::GetArtifactAtt": [ "ApiOutput", "BucketName" ] }, "StartFunctionKey": { "Fn::GetArtifactAtt": [ "StartOutput", "ObjectKey" ] }, "CallEndpointFunctionKey": { "Fn::GetArtifactAtt": [ "CallEndpointOutput", "ObjectKey" ] }, "ResponseFunctionKey": { "Fn::GetArtifactAtt": [ "ResponseOutput", "ObjectKey" ] } }'
+                ParameterOverrides: '{ "BucketName": { "Fn::GetArtifactAtt": [ "StartOutput", "BucketName" ] }, "StartFunctionKey": { "Fn::GetArtifactAtt": [ "StartOutput", "ObjectKey" ] }, "CallEndpointFunctionKey": { "Fn::GetArtifactAtt": [ "CallEndpointOutput", "ObjectKey" ] }, "ResponseFunctionKey": { "Fn::GetArtifactAtt": [ "ResponseOutput", "ObjectKey" ] } }'
                 RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCloudFormation'
               InputArtifacts:
                 - Name: PrimaryOutput
