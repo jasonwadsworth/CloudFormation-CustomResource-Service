@@ -344,7 +344,7 @@ Resources:
                 StackName: CloudFormation-CustomResourceService
                 Capabilities: CAPABILITY_NAMED_IAM
                 TemplatePath: 'PrimaryOutput::CustomResourceService.yaml'
-                ParameterOverrides: '{ "BucketName": { "Fn::GetArtifactAtt": [ "StartOutput", "BucketName" ] }, "StartFunctionBucketKey": { "Fn::GetArtifactAtt": [ "StartOutput", "ObjectKey" ] }, "CallEndpointFunctionBucketKey": { "Fn::GetArtifactAtt": [ "CallEndpointOutput", "ObjectKey" ] }, "ResponseFunctionBucketKey": { "Fn::GetArtifactAtt": [ "ResponseOutput", "ObjectKey" ] } }'
+                ParameterOverrides: '{ "Bucket": { "Fn::GetArtifactAtt": [ "StartOutput", "BucketName" ] }, "StartFunctionBucketKey": { "Fn::GetArtifactAtt": [ "StartOutput", "ObjectKey" ] }, "CallEndpointFunctionBucketKey": { "Fn::GetArtifactAtt": [ "CallEndpointOutput", "ObjectKey" ] }, "ResponseFunctionBucketKey": { "Fn::GetArtifactAtt": [ "ResponseOutput", "ObjectKey" ] } }'
                 RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CrossAccountCloudFormation'
               InputArtifacts:
                 - Name: PrimaryOutput
