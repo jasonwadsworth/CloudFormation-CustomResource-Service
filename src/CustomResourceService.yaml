@@ -124,7 +124,7 @@ Resources:
       Description: CloudFormation Custom Resource Service Start
       Runtime: nodejs10.x
       Role: !GetAtt CloudFormationCustomResourceServiceStartRole.Arn
-      Handler: index.handler
+      Handler: Start.handler
       Environment:
         Variables:
           StateMachineArn: !Ref StateMachine
@@ -195,7 +195,7 @@ Resources:
       Description: CloudFormation Custom Resource Service Call Endpoint
       Runtime: nodejs10.x
       Role: !GetAtt CloudFormationCustomResourceServiceCallEndpointRole.Arn
-      Handler: index.handler
+      Handler: CallEndpoint.handler
       Code:
         S3Bucket: !Ref Bucket
         S3Key: !Ref CallEndpointFunctionBucketKey
@@ -239,7 +239,7 @@ Resources:
       Description: CloudFormation Custom Resource Service Response
       Runtime: nodejs10.x
       Role: !GetAtt CloudFormationCustomResourceServiceResponseRole.Arn
-      Handler: index.handler
+      Handler: Response.handler
       Code:
         S3Bucket: !Ref Bucket
         S3Key: !Ref ResponseFunctionBucketKey
